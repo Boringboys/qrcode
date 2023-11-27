@@ -43,6 +43,7 @@ type Matrix struct {
 	Size      image.Rectangle
 	Data      []bool
 	Content   string
+	ContentBytes []byte
 }
 
 func (mx *Matrix) AtOrgPoints(x, y int) bool {
@@ -866,6 +867,45 @@ func Decode(fi io.Reader) (*Matrix, error) {
 		return nil, err
 	}
 	qrMatrix.Content = string(bt)
+	return qrMatrix, nil
+}
+
+// Decode 二维码识别函数 （只返回字节数组，不进一步解码成字符串）
+func Decode2Bytes(fi io.Reader) (*Matrix, error) {
+	img, _, err := image.Decode(fi)
+	if err != nil {
+		return nil, err
+	}
+	batchID := uuid.New().String()
+	batchPath := filepath.Join(os.TempDir(), "tuotoo", "qrcode", batchID)
+	qrMatrix, err := DecodeImg(img, batchPath)
+	if err != nil {
+		return nil, err
+	}
+	info, err := qrMatrix.FormatInfo()
+	if err != nil {
+		return nil, err
+	}
+	maskFunc := MaskFunc(info.Mask)
+	unmaskMatrix := new(Matrix)
+	for y, line := range qrMatrix.Points {
+		var l []bool
+		for x, value := range line {
+			l = append(l, maskFunc(x, y) != value)
+		}
+		unmaskMatrix.Points = append(unmaskMatrix.Points, l)
+	}
+	dataArea := unmaskMatrix.DataArea()
+	dataCode, err := ParseBlock(qrMatrix, GetData(unmaskMatrix, dataArea))
+	if err != nil {
+		return nil, err
+	}
+	bt, err := Bits2Bytes(dataCode, unmaskMatrix.Version())
+	if err != nil {
+		return nil, err
+	}
+	// qrMatrix.Content = string(bt)
+	qrMatrix.ContentBytes = bt
 	return qrMatrix, nil
 }
 
